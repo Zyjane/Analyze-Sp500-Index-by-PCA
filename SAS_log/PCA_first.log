@@ -1,0 +1,538 @@
+ 
+ 1          OPTIONS NONOTES NOSTIMER NOSOURCE NOSYNTAXCHECK;
+ NOTE: ODS statements in the SAS Studio environment may disable some output features.
+ 73         
+ 74         /*final Project*/
+ 75         
+ 76         
+ 77         %let root=/folders/myshortcuts/D_DRIVE/biostat_2019_spring/Bios_669;
+ 78         %LET job=Final Project;
+ 79         %LET onyen=zying;
+ 80         %LET dat=&root./&job/SAS_dataset;
+ 81         ods graphics / noborder;
+ 82         ods noproctitle;
+ 83         option mprint;
+ 84         
+ 85         
+ 86         OPTIONS NODATE MERGENOBY=WARN VARINITCHK=WARN ;
+ 87         *FOOTNOTE "&job._&onyen run on &sysdate at &systime";
+ 88         libname stock "&dat.";
+ NOTE: Libref STOCK was successfully assigned as follows: 
+       Engine:        V9 
+       Physical Name: /folders/myshortcuts/D_DRIVE/biostat_2019_spring/Bios_669/Final Project/SAS_dataset
+ 89         
+ 90         
+ 91         ods pdf file="&root./&job/PCA_output.pdf" style=PEARL;
+ NOTE: Writing ODS PDF output to DISK destination 
+       "/folders/myshortcuts/D_DRIVE/biostat_2019_spring/Bios_669/Final Project/PCA_output.pdf", printer "PDF".
+ 92         
+ 93         /*Step 1:
+ 94         Part 1.1*/
+ 95         /*prepare the data add all full names and sector to the eigenvetor according to stock codes*/
+ 96         proc sql;
+ 97         create table pre_data as
+ 98         select a.*,b.Name as fullname, b.sector as sector
+ 99         from  stock.eigenvector as a full JOIN stock.name_list as b
+ 100        ON  A.STOCK_NAME=B.IDENTIFIER;
+ NOTE: Table WORK.PRE_DATA created, with 504 rows and 508 columns.
+ 
+ 101        quit;
+ NOTE: PROCEDURE SQL used (Total process time):
+       real time           0.06 seconds
+       cpu time            0.05 seconds
+       
+ 
+ 102        
+ 103        
+ 104        /*Part 1.2*/
+ 105        /*make frequency table about the different sectors in S&P index*/
+ 106        title "The count and percentage of sectors in SP 500 Index";
+ 107        proc report data = pre_data nowd missing ;
+ 108        column sector n pctn;
+ 109        define sector/group id order = freq descending;
+ 110         define n / format =8. "N" ;
+ 111        define pctn / "Percentage" format =percent7.1;
+ 112        
+ 113        /*add the background color to the frequency table*/
+ 114         compute pctn;
+ 115             if pctn >0.1 then call define(_row_,"style","style={background=orange}");
+ 116             endcomp;
+ 117        run;
+ 
+ NOTE: There were 504 observations read from the data set WORK.PRE_DATA.
+ NOTE: PROCEDURE REPORT used (Total process time):
+       real time           0.11 seconds
+       cpu time            0.11 seconds
+       
+ 
+ 118        
+ 119        title "The daily return from 2009 to 2019";
+ 120        proc sgplot data=stock.sp500_add_return;
+ 121        series X=Date Y=daily_return;
+ 122        yaxis label="daily return";
+ 123        run;
+ 
+ NOTE: PROCEDURE SGPLOT used (Total process time):
+       real time           0.66 seconds
+       cpu time            0.27 seconds
+       
+ NOTE: The column format YYMMDD10 is replaced by an auto-generated format on the axis.
+ NOTE: The column format YYMMDD10 is replaced by an auto-generated format on the axis.
+ NOTE: The column format YYMMDD10 is replaced by an auto-generated format on the axis.
+ NOTE: The column format YYMMDD10 is replaced by an auto-generated format on the axis.
+ NOTE: There were 2529 observations read from the data set STOCK.SP500_ADD_RETURN.
+ 
+ 124        
+ 125        /*Step 2:
+ 126        Part 2.1*/
+ 127        /*Display the eigenvalue by plots */
+ 128        
+ 129        
+ 130        data eigenvalue;
+ 131        set stock.eigenvalue(rename =(_0=eigenvalue ));
+ 132        retain cums;
+ 133        drop var1;
+ 134        rank=var1+1;/*the rank of eigenvalue can be obtained by Var1*/
+ 135        if _n_=1 then cums=eigenvalue;
+ 136        else cums=cums+eigenvalue;/*calculate the cumulative eigenvalues*/
+ 137        ;
+ 138        run;
+ 
+ NOTE: There were 504 observations read from the data set STOCK.EIGENVALUE.
+ NOTE: The data set WORK.EIGENVALUE has 504 observations and 3 variables.
+ NOTE: DATA statement used (Total process time):
+       real time           0.02 seconds
+       cpu time            0.01 seconds
+       
+ 
+ 139        /*get the percentage and cumulative percentage of eigenvalue*/
+ 140        Proc SQL noprint;
+ 141          Create Table for_graph AS
+ 142            Select *,(cums/SUM(eigenvalue)*100) AS cumPercent format=6.5 ,
+ 143            (eigenvalue/SUM(eigenvalue)*100) AS Percent format=6.5
+ 144          From eigenvalue
+ 145          order by rank;
+ NOTE: The query requires remerging summary statistics back with the original data.
+ NOTE: Table WORK.FOR_GRAPH created, with 504 rows and 5 columns.
+ 
+ 146        
+ 147        SELECT  min(rank) into : num_ev_seventy_per
+ 148        from for_graph
+ 149        where cumPercent le 71 and cumPercent ge 70;
+ 150        Quit;
+ NOTE: PROCEDURE SQL used (Total process time):
+       real time           0.03 seconds
+       cpu time            0.01 seconds
+       
+ 
+ 151        
+ 152        /*get the eigenvalue and their percentage for first 5 PCs*/
+ 153        title "Eigenvalues and percentages of first 5 eigenvalues";
+ 154        Proc report data=for_graph(where=(rank<=5));
+ 155        column rank  eigenvalue  percent  cumpercent;
+ 156        define rank/ "Rank" order;
+ 157         define eigenvalue / format =6.2 ;
+ 158        define percent / "Percentage" ;
+ 159        define cumpercent / "Cumulative Percentage" ;
+ 160        run;
+ 
+ NOTE: There were 5 observations read from the data set WORK.FOR_GRAPH.
+       WHERE rank<=5;
+ NOTE: At least one W.D format was too small for the number to be printed. The decimal may be shifted by the "BEST" format.
+ NOTE: PROCEDURE REPORT used (Total process time):
+       real time           0.07 seconds
+       cpu time            0.08 seconds
+       
+ 
+ 161        
+ 162        
+ 163        /*Plot the percentage and cumulative percentage of all eigenvalues*/
+ 164        
+ 165        title "The percentage and cumulative percentage of eigenvalues";
+ 166        proc sgplot data=for_graph;
+ 167        series X=RANK Y=Percent;
+ 168        series X=RANK Y=cumPercent;
+ 169        
+ 170        refline 70 /axis=y lineattrs=(color=red pattern=2);
+ 171        refline &num_ev_seventy_per/axis=x lineattrs=(color=red pattern=2);
+ 172        inset ("X =" = "&num_ev_seventy_per")/position=topleft;
+ 173        inset ("Y=" = "70")/position=right;
+ 174        xaxis grid label="Eigenvalue Rank";
+ 175        yaxis grid ;
+ 176        run;
+ 
+ NOTE: PROCEDURE SGPLOT used (Total process time):
+       real time           0.56 seconds
+       cpu time            0.16 seconds
+       
+ NOTE: There were 504 observations read from the data set WORK.FOR_GRAPH.
+ 
+ 177        
+ 178        /*histogram of eigenvalues*/
+ 179        title "Histogram of the percentage of eigenvalues";
+ 180        proc sgplot data=for_graph;
+ 181        histogram Percent/binwidth=0.5;
+ 182        xaxis grid label="Eigenvalue Percentage";
+ 183        yaxis grid ;
+ 184        run;
+ 
+ NOTE: PROCEDURE SGPLOT used (Total process time):
+       real time           0.30 seconds
+       cpu time            0.15 seconds
+       
+ NOTE: There were 504 observations read from the data set WORK.FOR_GRAPH.
+ 
+ 185        
+ 186        title "Summary Table of the percentage eigenvalues";
+ 187        proc means data=for_graph;
+ 188        var Percent;
+ 189        run;
+ 
+ NOTE: There were 504 observations read from the data set WORK.FOR_GRAPH.
+ NOTE: PROCEDURE MEANS used (Total process time):
+       real time           0.05 seconds
+       cpu time            0.06 seconds
+       
+ 
+ 190        
+ 191        /*Step 2: Present the first eigenvector: the one stands for the market effect
+ 192        Part 2.2*/
+ 193        proc sql;
+ 194        create table PC0 as
+ 195        select stock_name,fullname,sector,_0
+ 196        from pre_data
+ 197        order by _0 desc;
+ NOTE: Table WORK.PC0 created, with 504 rows and 4 columns.
+ 
+ 198        quit;
+ NOTE: PROCEDURE SQL used (Total process time):
+       real time           0.01 seconds
+       cpu time            0.00 seconds
+       
+ 
+ 199        
+ 200        data PC0;
+ 201        set PC0;
+ 202        obs=_n_;
+ 203        run;
+ 
+ NOTE: There were 504 observations read from the data set WORK.PC0.
+ NOTE: The data set WORK.PC0 has 504 observations and 5 variables.
+ NOTE: DATA statement used (Total process time):
+       real time           0.00 seconds
+       cpu time            0.01 seconds
+       
+ 
+ 204        
+ 205        /*plot all Coefficient Values in the first Principal Component by its rank*/
+ 206        title "Coefficient Values in the first Principal Component ";
+ 207        proc sgplot data=PC0;
+ 208        scatter X=obs Y=_0/group=sector markerattrs=(symbol=circlefilled );
+ 209        xaxis label="rank of coefficients";
+ 210        yaxis label="Coefficients";
+ 211        run;
+ 
+ NOTE: PROCEDURE SGPLOT used (Total process time):
+       real time           0.54 seconds
+       cpu time            0.25 seconds
+       
+ NOTE: There were 504 observations read from the data set WORK.PC0.
+ 
+ 212        
+ 213        /*plot histogram of Coefficient Values in the first Principal Component*/
+ 214        title "histogram of the coefficients in the first Principal Component";
+ 215        proc sgplot data=PC0;
+ 216        histogram _0;
+ 217        xaxis label="Coefficients in the first PC";
+ 218        yaxis label="Percentage";
+ 219        run;
+ 
+ NOTE: PROCEDURE SGPLOT used (Total process time):
+       real time           0.32 seconds
+       cpu time            0.16 seconds
+       
+ NOTE: There were 504 observations read from the data set WORK.PC0.
+ 
+ 220        
+ 221        /*get correlation of the daily return between PC1 and SP500*/
+ 222        title "Correlation of the daily return between PC1 and SP500";
+ 223        proc corr data=  stock.pc1_sp500;
+ 224        var SP500 PC1;
+ 225        run;
+ 
+ NOTE: PROCEDURE CORR used (Total process time):
+       real time           0.08 seconds
+       cpu time            0.06 seconds
+       
+ 
+ 226        
+ 227        
+ 228        /*Step 3:
+ 229        Part 3.1*/
+ 230        
+ 231        %include "&root./&job/SAS_code/codebook_PCA.sas ";
+ 336        
+ 337        %PCA_plot(ith_PC=2); /*Display the second eigenvector */
+ MPRINT(PCA_PLOT):   proc sql noprint;
+ MPRINT(PCA_PLOT):   create table PC as select stock_name,fullname,sector,_1 from pre_data order by _1 desc;
+ NOTE: Table WORK.PC created, with 504 rows and 4 columns.
+ 
+ MPRINT(PCA_PLOT):   quit;
+ NOTE: PROCEDURE SQL used (Total process time):
+       real time           0.00 seconds
+       cpu time            0.00 seconds
+       
+ 
+ MPRINT(PCA_PLOT):   data PC;
+ MPRINT(PCA_PLOT):   set PC;
+ MPRINT(PCA_PLOT):   obs=_n_;
+ MPRINT(PCA_PLOT):   run;
+ 
+ NOTE: There were 504 observations read from the data set WORK.PC.
+ NOTE: The data set WORK.PC has 504 observations and 5 variables.
+ NOTE: DATA statement used (Total process time):
+       real time           0.00 seconds
+       cpu time            0.02 seconds
+       
+ 
+ MPRINT(PCA_PLOT):   proc sql noprint;
+ MPRINT(PCA_PLOT):   select stock_name into : positive_5_stocks separated by " " from PC where obs<=5 ;
+ MPRINT(PCA_PLOT):   select stock_name into : negative_5_stocks separated by " " from PC where obs>=500;
+ MPRINT(PCA_PLOT):   quit;
+ NOTE: PROCEDURE SQL used (Total process time):
+       real time           0.00 seconds
+       cpu time            0.00 seconds
+       
+ 
+ POSITIVE_5_STOCKS=FITB MAC SLG KIM AIV NEGATIVE_5_STOCKS=SWKS FTNT NVDA NFLX AMD
+ MPRINT(PCA_PLOT):   title "Coefficient Values in the 2nd Principal Component ";
+ MPRINT(PCA_PLOT):   proc sgplot data=PC;
+ MPRINT(PCA_PLOT):   scatter X=obs Y=_1/group=sector markerattrs=(symbol=circlefilled );
+ MPRINT(PCA_PLOT):   xaxis label="rank of coefficients";
+ MPRINT(PCA_PLOT):   yaxis label="Coefficients";
+ MPRINT(PCA_PLOT):   run;
+ 
+ NOTE: PROCEDURE SGPLOT used (Total process time):
+       real time           0.48 seconds
+       cpu time            0.25 seconds
+       
+ NOTE: There were 504 observations read from the data set WORK.PC.
+ 
+ MPRINT(PCA_PLOT):   title "Histogram of Coefficient Values in the 2nd Principal Component ";
+ MPRINT(PCA_PLOT):   proc sgplot data=PC;
+ MPRINT(PCA_PLOT):   histogram _1;
+ MPRINT(PCA_PLOT):   xaxis label="Value of coefficients";
+ MPRINT(PCA_PLOT):   yaxis label="Percentage";
+ MPRINT(PCA_PLOT):   run;
+ 
+ NOTE: PROCEDURE SGPLOT used (Total process time):
+       real time           0.29 seconds
+       cpu time            0.16 seconds
+       
+ NOTE: There were 504 observations read from the data set WORK.PC.
+ 
+ MPRINT(PCA_PLOT):   title "5 largest positive Coefficient Values in the 2nd Principal Component ";
+ MPRINT(PCA_PLOT):   proc sgplot data=PC;
+ MPRINT(PCA_PLOT):   scatter X=obs Y=_1/group=sector datalabel=fullname MARKERATTRS= (symbol=StarFilled size=1 CM) DATASKIN=SHEEN;
+ MPRINT(PCA_PLOT):   xaxis label="rank of coefficients";
+ MPRINT(PCA_PLOT):   yaxis label="Coefficients";
+ MPRINT(PCA_PLOT):   where obs<=5;
+ MPRINT(PCA_PLOT):   run;
+ 
+ NOTE: PROCEDURE SGPLOT used (Total process time):
+       real time           0.66 seconds
+       cpu time            0.18 seconds
+       
+ NOTE: There were 5 observations read from the data set WORK.PC.
+       WHERE obs<=5;
+ 
+ MPRINT(PCA_PLOT):   title "5 smallest negative Coefficient Values in the 2nd Principal Component";
+ MPRINT(PCA_PLOT):   proc sgplot data=PC;
+ MPRINT(PCA_PLOT):   scatter X=obs Y=_1/group=sector datalabel=fullname MARKERATTRS= (symbol=StarFilled size=1 CM) DATASKIN=SHEEN;
+ MPRINT(PCA_PLOT):   xaxis label="rank of coefficients";
+ MPRINT(PCA_PLOT):   yaxis label="Coefficients";
+ MPRINT(PCA_PLOT):   where obs>=500;
+ MPRINT(PCA_PLOT):   run;
+ 
+ NOTE: PROCEDURE SGPLOT used (Total process time):
+       real time           0.81 seconds
+       cpu time            0.17 seconds
+       
+ NOTE: There were 5 observations read from the data set WORK.PC.
+       WHERE obs>=500;
+ 
+ MPRINT(PCA_PLOT):   title "The return from the start date for the stocks with 5 largest coefficients";
+ MPRINT(PCA_PLOT):   proc sgplot data=stock.return_from_start;
+ MPRINT(PCA_PLOT):   series Y=FITB X=date;
+ MPRINT(PCA_PLOT):   series Y=MAC X=date;
+ MPRINT(PCA_PLOT):   series Y=SLG X=date;
+ MPRINT(PCA_PLOT):   series Y=KIM X=date;
+ MPRINT(PCA_PLOT):   series Y=AIV X=date;
+ MPRINT(PCA_PLOT):   Yaxis label="Return";
+ MPRINT(PCA_PLOT):   run;
+ 
+ NOTE: PROCEDURE SGPLOT used (Total process time):
+       real time           0.95 seconds
+       cpu time            0.33 seconds
+       
+ NOTE: The column format YYMMDD10 is replaced by an auto-generated format on the axis.
+ NOTE: The column format YYMMDD10 is replaced by an auto-generated format on the axis.
+ NOTE: The column format YYMMDD10 is replaced by an auto-generated format on the axis.
+ NOTE: The column format YYMMDD10 is replaced by an auto-generated format on the axis.
+ NOTE: There were 2528 observations read from the data set STOCK.RETURN_FROM_START.
+ 
+ MPRINT(PCA_PLOT):   title "The return from the start date for the stocks with 5 smallest negative coefficients";
+ MPRINT(PCA_PLOT):   proc sgplot data=stock.return_from_start;
+ MPRINT(PCA_PLOT):   series Y=SWKS X=date;
+ MPRINT(PCA_PLOT):   series Y=FTNT X=date;
+ MPRINT(PCA_PLOT):   series Y=NVDA X=date;
+ MPRINT(PCA_PLOT):   series Y=NFLX X=date;
+ MPRINT(PCA_PLOT):   series Y=AMD X=date;
+ MPRINT(PCA_PLOT):   Yaxis label="Return";
+ MPRINT(PCA_PLOT):   run;
+ 
+ NOTE: PROCEDURE SGPLOT used (Total process time):
+       real time           1.54 seconds
+       cpu time            0.45 seconds
+       
+ NOTE: The column format YYMMDD10 is replaced by an auto-generated format on the axis.
+ NOTE: The column format YYMMDD10 is replaced by an auto-generated format on the axis.
+ NOTE: The column format YYMMDD10 is replaced by an auto-generated format on the axis.
+ NOTE: The column format YYMMDD10 is replaced by an auto-generated format on the axis.
+ NOTE: There were 2528 observations read from the data set STOCK.RETURN_FROM_START.
+ 
+ 338        %PCA_plot(ith_PC=3); /*Display the third eigenvector */
+ MPRINT(PCA_PLOT):   proc sql noprint;
+ MPRINT(PCA_PLOT):   create table PC as select stock_name,fullname,sector,_2 from pre_data order by _2 desc;
+ NOTE: Table WORK.PC created, with 504 rows and 4 columns.
+ 
+ MPRINT(PCA_PLOT):   quit;
+ NOTE: PROCEDURE SQL used (Total process time):
+       real time           0.01 seconds
+       cpu time            0.01 seconds
+       
+ 
+ MPRINT(PCA_PLOT):   data PC;
+ MPRINT(PCA_PLOT):   set PC;
+ MPRINT(PCA_PLOT):   obs=_n_;
+ MPRINT(PCA_PLOT):   run;
+ 
+ NOTE: There were 504 observations read from the data set WORK.PC.
+ NOTE: The data set WORK.PC has 504 observations and 5 variables.
+ NOTE: DATA statement used (Total process time):
+       real time           0.00 seconds
+       cpu time            0.02 seconds
+       
+ 
+ MPRINT(PCA_PLOT):   proc sql noprint;
+ MPRINT(PCA_PLOT):   select stock_name into : positive_5_stocks separated by " " from PC where obs<=5 ;
+ MPRINT(PCA_PLOT):   select stock_name into : negative_5_stocks separated by " " from PC where obs>=500;
+ MPRINT(PCA_PLOT):   quit;
+ NOTE: PROCEDURE SQL used (Total process time):
+       real time           0.00 seconds
+       cpu time            0.00 seconds
+       
+ 
+ POSITIVE_5_STOCKS=MRO DVN FCX HP CXO NEGATIVE_5_STOCKS=ALK REGN DAL UAL AAL
+ MPRINT(PCA_PLOT):   title "Coefficient Values in the 3rd Principal Component ";
+ MPRINT(PCA_PLOT):   proc sgplot data=PC;
+ MPRINT(PCA_PLOT):   scatter X=obs Y=_2/group=sector markerattrs=(symbol=circlefilled );
+ MPRINT(PCA_PLOT):   xaxis label="rank of coefficients";
+ MPRINT(PCA_PLOT):   yaxis label="Coefficients";
+ MPRINT(PCA_PLOT):   run;
+ 
+ NOTE: PROCEDURE SGPLOT used (Total process time):
+       real time           1.15 seconds
+       cpu time            0.57 seconds
+       
+ NOTE: There were 504 observations read from the data set WORK.PC.
+ 
+ MPRINT(PCA_PLOT):   title "Histogram of Coefficient Values in the 3rd Principal Component ";
+ MPRINT(PCA_PLOT):   proc sgplot data=PC;
+ MPRINT(PCA_PLOT):   histogram _2;
+ MPRINT(PCA_PLOT):   xaxis label="Value of coefficients";
+ MPRINT(PCA_PLOT):   yaxis label="Percentage";
+ MPRINT(PCA_PLOT):   run;
+ 
+ NOTE: PROCEDURE SGPLOT used (Total process time):
+       real time           0.58 seconds
+       cpu time            0.28 seconds
+       
+ NOTE: There were 504 observations read from the data set WORK.PC.
+ 
+ MPRINT(PCA_PLOT):   title "5 largest positive Coefficient Values in the 3rd Principal Component ";
+ MPRINT(PCA_PLOT):   proc sgplot data=PC;
+ MPRINT(PCA_PLOT):   scatter X=obs Y=_2/group=sector datalabel=fullname MARKERATTRS= (symbol=StarFilled size=1 CM) DATASKIN=SHEEN;
+ MPRINT(PCA_PLOT):   xaxis label="rank of coefficients";
+ MPRINT(PCA_PLOT):   yaxis label="Coefficients";
+ MPRINT(PCA_PLOT):   where obs<=5;
+ MPRINT(PCA_PLOT):   run;
+ 
+ NOTE: PROCEDURE SGPLOT used (Total process time):
+       real time           0.99 seconds
+       cpu time            0.28 seconds
+       
+ NOTE: There were 5 observations read from the data set WORK.PC.
+       WHERE obs<=5;
+ 
+ MPRINT(PCA_PLOT):   title "5 smallest negative Coefficient Values in the 3rd Principal Component";
+ MPRINT(PCA_PLOT):   proc sgplot data=PC;
+ MPRINT(PCA_PLOT):   scatter X=obs Y=_2/group=sector datalabel=fullname MARKERATTRS= (symbol=StarFilled size=1 CM) DATASKIN=SHEEN;
+ MPRINT(PCA_PLOT):   xaxis label="rank of coefficients";
+ MPRINT(PCA_PLOT):   yaxis label="Coefficients";
+ MPRINT(PCA_PLOT):   where obs>=500;
+ MPRINT(PCA_PLOT):   run;
+ 
+ NOTE: PROCEDURE SGPLOT used (Total process time):
+       real time           0.69 seconds
+       cpu time            0.21 seconds
+       
+ NOTE: There were 5 observations read from the data set WORK.PC.
+       WHERE obs>=500;
+ 
+ MPRINT(PCA_PLOT):   title "The return from the start date for the stocks with 5 largest coefficients";
+ MPRINT(PCA_PLOT):   proc sgplot data=stock.return_from_start;
+ MPRINT(PCA_PLOT):   series Y=MRO X=date;
+ MPRINT(PCA_PLOT):   series Y=DVN X=date;
+ MPRINT(PCA_PLOT):   series Y=FCX X=date;
+ MPRINT(PCA_PLOT):   series Y=HP X=date;
+ MPRINT(PCA_PLOT):   series Y=CXO X=date;
+ MPRINT(PCA_PLOT):   Yaxis label="Return";
+ MPRINT(PCA_PLOT):   run;
+ 
+ NOTE: PROCEDURE SGPLOT used (Total process time):
+       real time           0.92 seconds
+       cpu time            0.32 seconds
+       
+ NOTE: The column format YYMMDD10 is replaced by an auto-generated format on the axis.
+ NOTE: The column format YYMMDD10 is replaced by an auto-generated format on the axis.
+ NOTE: The column format YYMMDD10 is replaced by an auto-generated format on the axis.
+ NOTE: The column format YYMMDD10 is replaced by an auto-generated format on the axis.
+ NOTE: There were 2528 observations read from the data set STOCK.RETURN_FROM_START.
+ 
+ MPRINT(PCA_PLOT):   title "The return from the start date for the stocks with 5 smallest negative coefficients";
+ MPRINT(PCA_PLOT):   proc sgplot data=stock.return_from_start;
+ MPRINT(PCA_PLOT):   series Y=ALK X=date;
+ MPRINT(PCA_PLOT):   series Y=REGN X=date;
+ MPRINT(PCA_PLOT):   series Y=DAL X=date;
+ MPRINT(PCA_PLOT):   series Y=UAL X=date;
+ MPRINT(PCA_PLOT):   series Y=AAL X=date;
+ MPRINT(PCA_PLOT):   Yaxis label="Return";
+ MPRINT(PCA_PLOT):   run;
+ 
+ NOTE: PROCEDURE SGPLOT used (Total process time):
+       real time           0.88 seconds
+       cpu time            0.35 seconds
+       
+ NOTE: The column format YYMMDD10 is replaced by an auto-generated format on the axis.
+ NOTE: The column format YYMMDD10 is replaced by an auto-generated format on the axis.
+ NOTE: The column format YYMMDD10 is replaced by an auto-generated format on the axis.
+ NOTE: The column format YYMMDD10 is replaced by an auto-generated format on the axis.
+ NOTE: There were 2528 observations read from the data set STOCK.RETURN_FROM_START.
+ 
+ 339        
+ 340        ods pdf close;
+ NOTE: ODS PDF printed 21 pages to /folders/myshortcuts/D_DRIVE/biostat_2019_spring/Bios_669/Final Project/PCA_output.pdf.
+ 341        
+ 342        OPTIONS NONOTES NOSTIMER NOSOURCE NOSYNTAXCHECK;
+ 354        
